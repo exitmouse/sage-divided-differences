@@ -4,7 +4,10 @@
 import sage
 from sage.structure.richcmp import richcmp
 from sage.modules.module import Module
-from sage.structure.element import ElementWrapper
+from sage.structure.coerce_exceptions import CoercionException
+from sage.structure.element import parent, Element
+from sage.structure.element import Element
+from sage.structure.element_wrapper import ElementWrapper
 
 # Module structure on the morphisms is not implemented for general modules! Why?
 from sage.categories.category_types import Category_over_base_ring
@@ -16,6 +19,8 @@ class HomModules(Category_over_base_ring):
          return [sage.categories.modules.Modules.Homsets(self.base_ring()),
                  sage.categories.modules.Modules(self.base_ring())]
     class ElementMethods:
+        def _acted_upon_(self, c, self_on_left):
+            return self.domain.module_morphism(function = lambda g: c*self(g), codomain=self.codomain())
         def _lmul_(self, c):
             return self.domain.module_morphism(function = lambda g: c*self(g), codomain=self.codomain())
         def _add_(self, other):
@@ -45,6 +50,17 @@ class ForgottenModules(Category_over_base_ring):
     def super_categories(self):
         return [ModulesWithHomModules(self.base_ring())]
 
+    class ElementMethods:
+        def unbox(self):
+            pass
+        # Convert scalars in self.base_ring() to self.unbox().base_ring()
+        def coerce_scalar(self, c):
+            return c
+        def always_3(self):
+            return 3
+        def _add_(self, other):
+            return self.parent()(self.unbox() + other.unbox())
+
     class ParentMethods:
         def internal(self):
             pass
@@ -55,15 +71,6 @@ class ForgottenModules(Category_over_base_ring):
             return "(%s)-module structure forgotten from %s" % (repr(self.base_ring()), repr(self.internal()))
         def __hash__(self):
             return hash(self.base_ring())
-
-    class ElementMethods:
-        def unbox(self):
-            pass
-        def _lmul_(self, c):
-            # override if self.parent().base_ring() is not a subring of self.parent().internal().base_ring()
-            return self.parent()(c*self.unbox())
-        def _add_(self, other):
-            return self.parent()(self.unbox() + other.unbox())
 
 # Imagine we have
 # A -> B -> C -> End(V)
@@ -78,8 +85,9 @@ class ForgottenModulesWithBasis(Category_over_base_ring):
         super().__init__(base_ring)
 
     def super_categories(self):
-        return [ModulesWithBasisWithHomModules(self.base_ring()),
-                ForgottenModules(self.base_ring())]
+        return [ForgottenModules(self.base_ring()),
+                ModulesWithBasisWithHomModules(self.base_ring())]
+                #ForgottenModules(self.base_ring())]
 
     class ElementMethods:
         def monomial_coefficients(self, copy=True):
@@ -92,11 +100,6 @@ class ForgottenModulesWithBasis(Category_over_base_ring):
             pass
         def head(self):
             pass
-        def __eq__(self, other):
-            if not isinstance(other, self.__class__): return False
-            return self.head() == other.head() and self.tail() == other.tail()
-        def __hash__(self):
-            return hash(self.base_ring())
         def _repr_(self):
             return "(%s)-module structure with monomial basis forgotten from %s" % (repr(self.base_ring()), repr(self.internal()))
         def monomial(self, tup):
@@ -108,30 +111,32 @@ class ForgottenModulesWithBasis(Category_over_base_ring):
             # Need to use Bmod action specifically, the one that knows the action of self.poly_ring
             return p*b
 
-class ForgottenModuleElement(ModuleElement):
+class ForgottenModuleElement(ElementWrapper):
+    wrapped_class = Element
 
-    def __init__(self, parent, x, f=None):
-        while isinstance(x, ForgottenModuleElement): # There should be a categorical way
-            x = x.unbox()
-        self.x = x
+    def __init__(self, parent, value, f=None):
+        self.x = value
+        while isinstance(self.x, ForgottenModuleElement): # There should be a categorical way
+            self.x = self.x.value
         self.f = f
-        super().__init__(parent)
-    def _richcmp_(self, other, op):
-        while isinstance(other, ForgottenModuleElement): # There should be a categorical way
-            other = other.unbox()
-        return richcmp(self.unbox(), other, op)
+        ElementWrapper.__init__(self, parent, value)
     def unbox(self):
         return self.x
-    def _lmul_(self, c):
-        if self.f is None:
-            return self.parent()(c*self.unbox())
-        else:
-            return self.parent()(self.f(c)*self.unbox())
-    def __hash__(self):
-        return hash(self.x)
-    def _repr_(self):
-        return repr(self.x)
+    def coerce_scalar(self, c):
+        return self.f(c)
+    def always_4(self):
+        return 4
+    # This must be defined directly on the element class, rather than on the ElementMethods
+    # Because Module is broken
+    def _acted_upon_(self, scalar, self_on_left):
+        if isinstance(scalar, Element) and parent(scalar) is not self.base_ring():
+            if self.base_ring().has_coerce_map_from(parent(scalar)):
+                scalar = self.base_ring()( scalar )
+            else:
+                raise CoercionException("No coercion map for %s to %s" % (scalar, self.base_ring()))
+        return self.parent()(self.coerce_scalar(scalar)*self.unbox())
 
+from sage.misc.lazy_attribute import lazy_attribute
 class ForgottenModule(Module):
     Element = ForgottenModuleElement
     def __init__(self, base_ring, Bmod, f=None, category=None):
@@ -140,17 +145,51 @@ class ForgottenModule(Module):
         while isinstance(self._internal, ForgottenModule):
             g = self._internal.f
             if g is not None:
-                if self.f is None:
+                f = self.f
+                if f is None:
                     self.f = g
                 else:
                     self.f = lambda a: f(g(a))
             self._internal = self._internal.internal()
         category = ForgottenModules(base_ring).or_subcategory(category)
         super().__init__(base_ring, category=category)
-    def internal(self):
-        return self._internal
     def _element_constructor_(self, x):
         return self.element_class(self, x, self.f)
+    def __hash__(self):
+        return hash(self.base_ring())
+    def internal(self):
+        return self._internal
+    def an_element(self):
+        return self(self._internal.an_element())
+
+    #@lazy_attribute
+    #def element_class(self):
+        #"""
+        #The (default) class for the elements of this parent
+        #Overrides :meth:`Parent.element_class` to force the
+        #construction of Python class. This is currently needed to
+        #inherit really all the features from categories, and in
+        #particular the initialization of ``_mul_`` in
+        #:meth:`Magmas.ParentMethods.__init_extra__`.
+        #EXAMPLES::
+            #sage: A = Algebras(QQ).WithBasis().example(); A
+            #An example of an algebra with basis:
+            #the free algebra on the generators ('a', 'b', 'c') over Rational Field
+            #sage: A.element_class.mro()
+            #[<class 'sage.categories.examples.algebras_with_basis.FreeAlgebra_with_category.element_class'>,
+             #<class 'sage.modules.with_basis.indexed_element.IndexedFreeModuleElement'>,
+             #...]
+            #sage: a,b,c = A.algebra_generators()
+            #sage: a * b
+            #B[word: ab]
+        #TESTS::
+            #sage: A.__class__.element_class.__module__
+            #'sage.combinat.free_module'
+        #"""
+        #return self.__make_element_class__(self.Element,
+                                           #name="%s.element_class" % self.__class__.__name__,
+                                           #module=self.__class__.__module__,
+                                           #inherit=True)
 
 class ForgottenModuleWithBasis(ForgottenModule):
     def __init__(self, head, tail, f=None, category=None):
@@ -165,6 +204,11 @@ class ForgottenModuleWithBasis(ForgottenModule):
         return self._head
     def tail(self):
         return self._tail
+    def __eq__(self, other):
+        if not isinstance(other, self.__class__): return False
+        return self.head() == other.head() and self.tail() == other.tail()
+    def __hash__(self):
+        return hash(self.tail())
 
 
 from sage.categories.functor import Functor, ForgetfulFunctor_generic
