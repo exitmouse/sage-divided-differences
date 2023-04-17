@@ -3,33 +3,97 @@
 # -*- mode: python-mode; python-indent-offset: 4 -*-
 import sage
 from sage.structure.richcmp import richcmp
-class ForgottenElement(sage.structure.element.ModuleElement):
-    def __init__(self, parent, x, f=None):
-        while isinstance(x, ForgottenElement):
-            x = x.x
+from sage.modules.module import Module
+from sage.structure.element import ModuleElement
+
+# Module structure on the morphisms is not implemented for general modules! Why?
+from sage.categories.category_types import Category_over_base_ring
+
+class HomModules(Category_over_base_ring):
+    def __init__(self, base_ring):
+        super().__init__(base_ring)
+    def super_categories(self):
+         return [sage.categories.modules.Modules.Homsets(self.base_ring()),
+                 sage.categories.modules.Modules(self.base_ring())]
+    class ElementMethods:
+        def _lmul_(self, c):
+            return self.domain.module_morphism(function = lambda g: c*self(g), codomain=self.codomain())
+        def _add_(self, other):
+            return self.domain.module_morphism(function = lambda g: other(g)+self(g), codomain=self.codomain())
+
+class ModulesWithHomModules(Category_over_base_ring):
+    def __init__(self, base_ring):
+        super().__init__(base_ring)
+    def super_categories(self):
+        return [Modules(self.base_ring())]
+    def Homsets(self):
+        return HomModules(self.base_ring())
+
+class ModulesWithBasisWithHomModules(Category_over_base_ring):
+    def __init__(self, base_ring):
+        super().__init__(base_ring)
+    def super_categories(self):
+        return [ModulesWithHomModules(self.base_ring()),
+                ModulesWithBasis(self.base_ring())]
+    def Homsets(self):
+        return HomModules(self.base_ring())
+
+class ForgottenModules(Category_over_base_ring):
+    def __init__(self, base_ring):
+        super().__init__(base_ring)
+
+    def super_categories(self):
+        return [ModulesWithHomModules(self.base_ring())]
+
+    class ParentMethods:
+        def internal(self):
+            pass
+        def _element_constructor_(self, x, f=None):
+            return self.element_class(x, f)
+        def __eq__(self, other):
+            if not isinstance(other, self.__class__): return False
+            return self.base_ring() == other.base_ring() and self.internal() == other.internal()
+        def _repr_(self):
+            return "(%s)-module structure forgotten from %s" % (repr(self.base_ring()), repr(self.internal()))
+        def __hash__(self):
+            return hash(self.base_ring())
+
+    class ElementMethods:
+        def unbox(self):
+            pass
+        def _lmul_(self, c):
+            # override if self.parent().base_ring() is not a subring of self.parent().internal().base_ring()
+            return self.parent()(c*self.unbox())
+        def _add_(self, other):
+            return self.parent()(self.unbox() + other.unbox())
+        def _richcmp_(self, other, op):
+            while isinstance(other, ForgottenModuleElement): # There should be a categorical way
+                other = other.unbox()
+            return richcmp(self.unbox(), other, op)
+        def __hash__(self):
+            return hash(self.unbox())
+        def _repr_(self):
+            return repr(self.unbox())
+
+class ForgottenModuleElement(ModuleElement):
+    def __init__(self, x, f=None):
+        while isinstance(x, ForgottenModuleElement): # There should be a categorical way
+            x = x.unbox()
         self.x = x
         self.f = f
-        sage.structure.element.ModuleElement.__init__(self, parent=parent)
+        super().__init__(self)
+
+    def unbox(self):
+        return self.x
     def _lmul_(self, c):
         if self.f is None:
-            return self.parent()(c*self.x)
+            return self.parent()(c*self.unbox())
         else:
-            return self.parent()(self.f(c)*self.x)
-    def _add_(self, other):
-        return self.parent()(self.x + other.x)
-    def _richcmp_(self, other, op):
-        if isinstance(other, ForgottenElement):
-            other = other.x
-        return richcmp(self.x, other, op)
-    def __hash__(self):
-        return hash(self.x)
-    def _repr_(self):
-        return repr(self.x)
-    def unbox(self):
-        return self.internal(self)
-class ForgetModule(sage.modules.module.Module):
-    Element = ForgottenElement
-    def __init__(self, A, Bmod, f=None):
+            return self.parent()(self.f(c)*self.unbox())
+
+class ForgottenModule(Module):
+    Element = ForgottenModuleElement
+    def __init__(self, base_ring, Bmod, f=None, category=None):
         self.internal = Bmod
         while isinstance(self.internal, ForgetModule):
             g = self.internal.f
@@ -39,18 +103,87 @@ class ForgetModule(sage.modules.module.Module):
                 else:
                     self.f = lambda a: f(g(a))
             self.internal = self.internal.internal
-        self.A = A
         self.f = f
-        super().__init__(A)
-    def _element_constructor_(self, x):
-        return self.element_class(self, x, f)
-    def __eq__(self, other):
-        if not isinstance(other, ForgetModule): return False
-        return self.base_ring() == other.base_ring() and self.internal == other.internal
-    def _repr_(self):
-        return "(%s)-module structure forgotten from %s" % (repr(self.A), repr(self.internal))
-    def __hash__(self):
-        return hash(self.base_ring())
+        category = ForgottenModules(base_ring).or_subcategory(category)
+        super().__init__(base_ring, category=category)
+    def internal(self):
+        return self.internal
+
+class ForgottenModuleWithBasis(ForgottenModule):
+    def __init__(self, head, tail, f=None, category=None):
+        self.head = head
+        self.tail = tail
+        self._indices = cartesian_product([self.head.basis().keys(),
+                                        self.tail.basis().keys()])
+        base_ring = head.base_ring()
+        category = ForgottenModulesWithBasis(base_ring).or_subcategory(category)
+        super().__init__(base_ring, tail, f=f, category=category)
+    def head(self):
+        return self.head
+    def tail(self):
+        return self.tail
+
+# Imagine we have
+# A -> B -> C -> End(V)
+# And we forget V until it is an A-module, step by step.
+# The resulting ForgottenModule F has the following attributes:
+# Bmod is V as a B-module.
+# internal() is V as a C-module
+# head() is an A-module isomorphic to B as an A-module, with coercions back and forth.
+# tail() is V as a B-module
+class ForgottenModulesWithBasis(Category_over_base_ring):
+    Element = ForgottenModuleElement
+
+    def __init__(self, base_ring):
+        super().__init__(base_ring)
+
+    def super_categories(self):
+        return [ModulesWithBasisWithHomModules(self.base_ring()),
+                ForgottenModules(self.base_ring())]
+
+    class ElementMethods:
+        def monomial_coefficients(self, copy=True):
+            tail_expansion = self.parent().tail()(self.unbox()).monomial_coefficients(copy)
+            return {(head_idx,tail_idx): coeff for tail_idx,c in tail_expansion.items()
+                    for head_idx,coeff in self.parent().head()(c).monomial_coefficients(copy).items()}
+
+    class ParentMethods:
+        def tail():
+            pass
+        def head():
+            pass
+        def _element_constructor_(self, x):
+            return self.element_class(x, self.f)
+        def __eq__(self, other):
+            if not isinstance(other, self.__class__): return False
+            return self.head() == other.head() and self.tail() == other.tail()
+        def __hash__(self):
+            return hash(self.base_ring())
+        def _repr_(self):
+            return "(%s)-module structure with monomial basis forgotten from %s" % (repr(self.base_ring()), repr(self.internal()))
+        def monomial(self, tup):
+            pidx = tup[0]
+            bidx = tup[1]
+            #return self(self.Bmod.monomial(bidx))
+            p = self.head().monomial(pidx) # M_to_R(self.poly_ring, pidx)
+            b = self.tail().monomial(bidx)
+            # Need to use Bmod action specifically, the one that knows the action of self.poly_ring
+            return p*b
+
+from sage.categories.functor import Functor, ForgetfulFunctor_generic
+# If A is a subring of B, produce a forgetful functor Modules(B) -> Modules(A)
+# Can forget along an injection f
+# Why do I have to code this
+class ForgetToSubring(ForgetfulFunctor_generic):
+    def __init__(self, A, B, f=None):
+        self.A = A
+        self.B = B
+        self.f = f
+        super().__init__(Modules(B), ForgottenModules(A))
+
+    #Apply self to an object x of selfs domain.
+    def _apply_functor(self, bmod):
+        return ForgottenModule(self.A, bmod, self.f)
 
 from sage.monoids.indexed_free_monoid import IndexedFreeAbelianMonoid
 def monomials(poly_ring):
@@ -93,85 +226,22 @@ def monomial_iso(poly_ring):
     phi = poly_ring.module_morphism(function=lambda x: R_to_C(poly_ring, x),
                                     codomain=C,
                                     category=Modules(poly_ring.base_ring()))
-    return (phi, unphi)
-
-
-class ForgottenElementWithBasis(ForgottenElement):
-    def __init__(self, parent, poly_ring, x, f=None):
-        self.poly_ring = poly_ring
-        super().__init__(parent, x, f)
-    def monomial_coefficients(self, copy=True):
-        b_expansion = self.parent().up_one(self.x).monomial_coefficients(copy)
-        return {(exps,b): coeff for b,c in b_expansion.items()
-                for exps,coeff in R_to_C(self.poly_ring, c).monomial_coefficients(copy).items()}
-
-# from sage.structure.indexed_generators import IndexedGenerators
-
-class ForgetPolynomialModuleWithBasis(sage.modules.module.Module):
-    Element = ForgottenElementWithBasis
-    def __init__(self, Bmod, category=None, f=None):
-        self.internal = Bmod
-        self.f = f
-        while isinstance(self.internal, ForgetPolynomialModuleWithBasis):
-            g = self.internal.f # Must evaluate now, before changing self.parent
-            if g is not None:
-                if self.f is None:
-                    self.f = g
-                else:
-                    self.f = lambda a: f(g(a))
-            self.internal = self.internal.internal
-        self.up_one = Bmod
-        self.poly_ring = Bmod.base_ring()
-        self.A = Bmod.base_ring().base_ring()
-        self._indices = cartesian_product([monomials(self.poly_ring),
-                                           self.up_one.basis().keys()])
-        category = ModulesWithBasis(self.A).or_subcategory(category)
-        super().__init__(self.A, category=category)
-    def _element_constructor_(self, x):
-        return self.element_class(self, self.poly_ring, x, self.f)
-    def __eq__(self, other):
-        if not isinstance(other, ForgetPolynomialModuleWithBasis): return False
-        return self.base_ring() == other.base_ring() and self.up_one == other.up_one
-    def __hash__(self):
-        return hash(self.base_ring())
-    def _repr_(self):
-        return "(%s)-module structure with monomial basis forgotten from %s" % (repr(self.A), repr(self.internal))
-    def monomial(self, tup):
-        pidx = tup[0]
-        bidx = tup[1]
-        #return self(self.Bmod.monomial(bidx))
-        p = M_to_R(self.poly_ring, pidx)
-        b = self.up_one.monomial(bidx)
-        # Need to use Bmod action specifically, the one that knows the action of self.poly_ring
-        return p*b
-
-from sage.categories.functor import Functor, ForgetfulFunctor_generic
-# If A is a subring of B, produce a forgetful functor Modules(B) -> Modules(A)
-# Can forget along an injection f
-# Why do I have to code this
-class ForgetToSubring(ForgetfulFunctor_generic):
-    def __init__(self, A, B, f=None):
-        self.A = A
-        self.B = B
-        self.f = f
-        super().__init__(Modules(B), Modules(A))
-
-    #Apply self to an object x of selfs domain.
-    def _apply_functor(self, bmod):
-        return ForgetModule(self.A, bmod, self.f)
+    if not C.has_coerce_map_from(poly_ring):
+        phi.register_as_coercion()
+    if not poly_ring.has_coerce_map_from(C):
+        unphi.register_as_coercion()
+    return C
 
 class ForgetPolynomial(ForgetfulFunctor_generic):
     def __init__(self, poly_ring):
         self.poly_ring = poly_ring
-        self.A = poly_ring.base_ring()
+        self.head = monomial_iso(poly_ring)
         super().__init__(ModulesWithBasis(self.poly_ring),
-                         ModulesWithBasis(self.A),
-                         )
+                         ForgottenModulesWithBasis(self.head.base_ring()))
 
     #Apply self to an object x of selfs domain.
     def _apply_functor(self, pmod):
-        return ForgetPolynomialModuleWithBasis(pmod,
-                                               f=self.poly_ring.coerce_map_from(self.A))
+        return ForgottenModuleWithBasis(self.head, pmod, f=self.poly_ring.coerce_map_from(self.head.base_ring()))
 
 class CompositeFunctor(Functor):
     def __init__(self, FA, FB):
