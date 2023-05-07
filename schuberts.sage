@@ -4,7 +4,7 @@
 import forget_modules
 
 n = 3
-R = PolynomialRing(QQ,'x',n-1)
+R = PolynomialRing(QQ,'x',n)
 zarr = R.gens()
 Sym = SymmetricFunctions(R['t'])
 P = Sym.hall_littlewood(t=-1).P()
@@ -60,20 +60,24 @@ def remove_root(i):
             return q
     return div
 
-def divdiff(i,f):
+C = depolynomialate(p, 2)
+
+def _divdiff(i,f):
     g = f - siR(i,f)
     return p(g).map_coefficients(remove_root(i))
 
-C = depolynomialate(p, 2)
+def divdiff(i):
+    return C.module_morphism(function=lambda f: C(_divdiff(i,f.unbox())), codomain=C)
 
 # QQ-linear differential operator can be defined on the images of generators
 def extend_leibniz(gen_images):
-    def extend_leibniz_monomial(m):
+    def extend_leibniz_midx(midx):
+        m = C.monomial(midx)
         if m in gen_images.keys():
             return gen_images[m]
-        f,g = mfactor(m) # Pull off some part
-        return extend_leibniz_monomial(f)*g + f*extend_leibniz_monomial(g)
-    return C.module_morphism(on_basis=lambda midx: C(extend_leibniz_monomial(C.monomial(midx))),
+        f,g = midxfactor(midx,1) # Pull off some part
+        return extend_leibniz_midx(f)*C.monomial(g) + C.monomial(f)*extend_leibniz_midx(g)
+    return C.module_morphism(on_basis=lambda midx: C(extend_leibniz_midx(midx)),
                              #domain=C.parent(),
                              codomain=C)
 # QQ-linear operator satisfying the leibniz rule only for squares:
@@ -81,16 +85,18 @@ def extend_leibniz(gen_images):
 #def extend_leibniz_squares()
 #
 
-def ddz1_gen(generator):
-    if generator == z(1):
-        return 1
-    supp = p(generator).support()[0]
-    if len(supp) == 1:
-        return -(1/2)*supp[0]*z(1)^(supp[0]-1)
-    return 0
+def ddzi_gen(i):
+    def ddzi_internal(generator):
+        if generator == z(i):
+            return 1
+        supp = p(generator).support()[0]
+        if len(supp) == 1:
+            return -(1/2)*supp[0]*z(i)^(supp[0]-1)
+        return 0
+    return ddzi_internal
 
 tgens = FiniteEnumeratedSet(U.gens())
-zgens = FiniteEnumeratedSet(U.gens())
+zgens = FiniteEnumeratedSet(R.gens())
 from sage.sets.set_from_iterator import EnumeratedSetFromIterator
 from itertools import count
 pgenerators = EnumeratedSetFromIterator(
@@ -115,4 +121,20 @@ class SymGens(DisjointUnionEnumeratedSets):
             return True
         return False
 
-ddz1 = extend_leibniz(Family(SymGens(), ddz1_gen))
+def ddz(i):
+    return extend_leibniz(Family(SymGens(), ddzi_gen(i)))
+
+CEnd = C.Hom(C)
+
+def principal_specialize_gen():
+    def psg_internal(generator):
+        if generator == t:
+            return 0
+        for i in range(len(zgens)):
+            if generator == z(i+1):
+                return t^(i)
+        supp = p(generator).support()[0]
+        if len(supp) == 1:
+            i = supp[0]
+            # principal specialization p_i(q^{-1}, q^{-2}, ...)
+            # = 1/(q^d-1) * [prod_{j=1}^{i-1} (q^j + 1)/(q^j - 1)]

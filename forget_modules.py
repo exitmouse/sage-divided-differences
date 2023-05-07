@@ -2,15 +2,29 @@
 # coding: utf-8-unix
 # -*- mode: python-mode; python-indent-offset: 4 -*-
 import sage
-from sage.structure.richcmp import richcmp
+from sage.categories.cartesian_product import cartesian_product
+from sage.categories.modules import Modules
+from sage.categories.modules_with_basis import ModulesWithBasis
+from sage.combinat.free_module import CombinatorialFreeModule
 from sage.modules.module import Module
 from sage.structure.coerce_exceptions import CoercionException
 from sage.structure.element import parent, Element
-from sage.structure.element import Element
 from sage.structure.element_wrapper import ElementWrapper
+from sage.structure.parent import Parent
+from sage.structure.richcmp import richcmp
 
 # Module structure on the morphisms is not implemented for general modules! Why?
 from sage.categories.category_types import Category_over_base_ring
+
+def h_scale(c, f):
+    return f.domain().module_morphism(function = lambda x: c*f(x),
+                                      codomain=f.codomain())
+def h_add(f, g):
+    return f.domain().module_morphism(function = lambda x: f(x) + g(x),
+                                      codomain=f.codomain())
+
+def bracket(f,g):
+    return h_add(f*g, h_scale(-1, g*f))
 
 class HomModules(Category_over_base_ring):
     def __init__(self, base_ring):
@@ -20,7 +34,8 @@ class HomModules(Category_over_base_ring):
                  sage.categories.modules.Modules(self.base_ring())]
     class ElementMethods:
         def _acted_upon_(self, c, self_on_left):
-            return self.domain.module_morphism(function = lambda g: c*self(g), codomain=self.codomain())
+            return self.domain.module_morphism(function = lambda g: c*self(g),
+                                               codomain=self.codomain())
         def _lmul_(self, c):
             return self.domain.module_morphism(function = lambda g: c*self(g), codomain=self.codomain())
         def _add_(self, other):
@@ -56,8 +71,6 @@ class ForgottenModules(Category_over_base_ring):
         # Convert scalars in self.base_ring() to self.unbox().base_ring()
         def coerce_scalar(self, c):
             return c
-        def always_3(self):
-            return 3
         def _add_(self, other):
             return self.parent()(self.unbox() + other.unbox())
 
@@ -124,10 +137,8 @@ class ForgottenModuleElement(ElementWrapper):
         return self.x
     def coerce_scalar(self, c):
         return self.f(c)
-    def always_4(self):
-        return 4
     # This must be defined directly on the element class, rather than on the ElementMethods
-    # Because Module is broken
+    # Because _acted_upon_ is cpdef'd instead of cdef'd in Element
     def _acted_upon_(self, scalar, self_on_left):
         if isinstance(scalar, Element) and parent(scalar) is not self.base_ring():
             if self.base_ring().has_coerce_map_from(parent(scalar)):
@@ -136,8 +147,7 @@ class ForgottenModuleElement(ElementWrapper):
                 raise CoercionException("No coercion map for %s to %s" % (scalar, self.base_ring()))
         return self.parent()(self.coerce_scalar(scalar)*self.unbox())
 
-from sage.misc.lazy_attribute import lazy_attribute
-class ForgottenModule(Module):
+class ForgottenModule(Parent):
     Element = ForgottenModuleElement
     def __init__(self, base_ring, Bmod, f=None, category=None):
         self._internal = Bmod
@@ -162,35 +172,6 @@ class ForgottenModule(Module):
     def an_element(self):
         return self(self._internal.an_element())
 
-    #@lazy_attribute
-    #def element_class(self):
-        #"""
-        #The (default) class for the elements of this parent
-        #Overrides :meth:`Parent.element_class` to force the
-        #construction of Python class. This is currently needed to
-        #inherit really all the features from categories, and in
-        #particular the initialization of ``_mul_`` in
-        #:meth:`Magmas.ParentMethods.__init_extra__`.
-        #EXAMPLES::
-            #sage: A = Algebras(QQ).WithBasis().example(); A
-            #An example of an algebra with basis:
-            #the free algebra on the generators ('a', 'b', 'c') over Rational Field
-            #sage: A.element_class.mro()
-            #[<class 'sage.categories.examples.algebras_with_basis.FreeAlgebra_with_category.element_class'>,
-             #<class 'sage.modules.with_basis.indexed_element.IndexedFreeModuleElement'>,
-             #...]
-            #sage: a,b,c = A.algebra_generators()
-            #sage: a * b
-            #B[word: ab]
-        #TESTS::
-            #sage: A.__class__.element_class.__module__
-            #'sage.combinat.free_module'
-        #"""
-        #return self.__make_element_class__(self.Element,
-                                           #name="%s.element_class" % self.__class__.__name__,
-                                           #module=self.__class__.__module__,
-                                           #inherit=True)
-
 class ForgottenModuleWithBasis(ForgottenModule):
     def __init__(self, head, tail, f=None, category=None):
         self._head = head
@@ -210,7 +191,6 @@ class ForgottenModuleWithBasis(ForgottenModule):
     def __hash__(self):
         return hash(self.tail())
 
-
 from sage.categories.functor import Functor, ForgetfulFunctor_generic
 # If A is a subring of B, produce a forgetful functor Modules(B) -> Modules(A)
 # Can forget along an injection f
@@ -226,7 +206,7 @@ class ForgetToSubring(ForgetfulFunctor_generic):
     def _apply_functor(self, bmod):
         return ForgottenModule(self.A, bmod, self.f)
 
-from sage.monoids.indexed_free_monoid import IndexedFreeAbelianMonoid
+from sage.monoids.indexed_free_monoid import IndexedFreeAbelianMonoid, IndexedFreeAbelianMonoidElement
 def monomials(poly_ring):
     return IndexedFreeAbelianMonoid(poly_ring.gens())
 
@@ -313,7 +293,7 @@ from sage.rings.polynomial.polydict import ETuple
 
 # Break off a linear factor from an exponent
 def etuple_factor(etup):
-    if e.is_constant():
+    if etup.is_constant():
         return None
     else:
         ke = etup.sparse_iter()
@@ -321,18 +301,44 @@ def etuple_factor(etup):
         first_var = ETuple({k:1}, int(len(etup)))
         return first_var, etup.esub(first_var)
 
-def mfactor(monomial):
-    if not hasattr(monomial, 'coefficients'):
-        return 1, monomial
-    if monomial.degree() == 0: # cannot be broken apart in this ring
-        return mfactor(monomial.base_ring()(monomial.coefficients[0]))
-    if hasattr(monomial, 'support'): # symmetric function
-        supp = monomial.support()[0]
-        return p([supp[0]]), monomial.coefficients()[0]*p(supp[1:])
-    # Polynomial
-    v,c = monomial.dict().items()[0]
-    if isinstance(v, ETuple): #multivariate
-        e1, e2 = etuple_factor(v)
-        return monomial.parent().monomial(e1),c*monomial.parent().monomial(e2)
-    # Univariate polynomial
-    return monomial.parent().gen(), c*monomial.parent().gen()**(v-1)
+def midxfactor(midx, amt):
+    if midx in Partitions():
+        if len(midx) >= amt:
+            return Partition(midx[:amt]), Partition(midx[amt:])
+        else:
+            return None
+    if isinstance(midx, ETuple):
+        if amt == 0:
+            return ETuple({}, int(len(midx))), midx
+        elif amt == 1:
+            return etuple_factor(midx)
+        raise NotImplementedException("Can't break off more from midx")
+    if isinstance(midx, IndexedFreeAbelianMonoidElement):
+        if amt == 0:
+            return midx.parent()({}), midx
+        if amt == 1:
+            if len(midx.dict().items()) == 0:
+                return None
+            k,v = next(iter(midx.dict().items()))
+            return midx.parent()({k: 1}), midx.parent()({r: (s-1 if r == k else s) for r,s in midx.dict().items()})
+    if midx in Integers():
+        if amt == 0:
+            return 0, midx
+        elif midx >= amt:
+            return amt, midx-amt
+        return None
+    # recurse
+    factorfirst = midxfactor(midx[0], amt)
+    if factorfirst is not None:
+        tailzero, tail = midxfactor(midx[1], 0)
+        x, y = factorfirst
+        return (x,tailzero), (y, tail)
+    else:
+        headzero, head = midxfactor(midx[0], 0)
+        xy = midxfactor(midx[1], amt)
+        if xy is None:
+            print((midx, amt))
+            return None
+            raise NotImplementedException("Unfactorable")
+        x, y = xy
+        return (headzero, x), (head, y)
