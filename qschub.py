@@ -6,7 +6,7 @@ from forget_modules import monomial_iso, depolynomialate
 
 nn = 3
 #tring = PolynomialRing(QQ, 't', 1)
-qring = PolynomialRing(QQ, 'q', nn)
+qring = PolynomialRing(QQ, 'q', nn+1)
 xring = PolynomialRing(FractionField(qring), 'x', nn)
 R = PolynomialRing(xring, 'y', nn)
 #t = tring.gen()
@@ -123,43 +123,50 @@ def rep_by_idx(x_fn, y_fn):
     return rho
 
 def i_on_xvar(i,d):
-    return x[i]^d
+    return x[i]**d
 
 def i_on_yvar(i,d):
-    return y[i]^d
+    return y[i]**d
 
 I_fn = rep_by_idx(i_on_xvar, i_on_yvar)
 
 # prop 2.4 jantzen. Infinite dim rep M(q[i]^i) with basis m_d := x[i]^d
 
 def F_on_xvar(i, d):
-    return x[i]^(d+1)
+    return x[i]**(d+1)
 
 # no idea what to do with eqv vars but
 def F_on_yvar(i, d):
-    return y[i]^(d+1)
+    return y[i]**(d+1)
 
 F_fn = rep_by_idx(F_on_xvar, F_on_yvar)
 
+# action of k on ith part is lambda * t**(-2*d)
+def scalar_action(i):
+    return q[i]
+
+# q[0]... go to 0 and have degree 2
+# t has degree 1 and goes to 1
+
 # As though we are taking the derivative of (q[i]^i*x[i])^d with respect to x. plus the t shift needed.
 def K_on_xvar(i, d):
-    coeff = q[i]^i*t^(-2*d)
-    return coeff*x[i]^d
+    coeff = scalar_action(i)*t**(-2*d)
+    return coeff*x[i]**d
 
 # Again no idea but maybe based on symmetry it should be this
 def K_on_yvar(i, d):
-    coeff = q[i]^i*t^(-2*d)
-    return (-1)^d * coeff * y[i]^d
+    coeff = scalar_action(i)*t**(-2*d)
+    return (-1)**d * coeff * y[i]**d
 
 K_fn = rep_by_idx(K_on_xvar, K_on_yvar)
 
 def Ki_on_xvar(i, d):
-    coeff = q[i]^(-i)*t^(2*d)
-    return coeff*x[i]^d
+    coeff = (1/scalar_action(i))*t**(2*d)
+    return coeff*x[i]**d
 
 def Ki_on_yvar(i, d):
-    coeff = q[i]^(-i)*t^(2*d)
-    return (-1)^d * coeff * y[i]^d
+    coeff = (1/scalar_action(i))*t**(2*d)
+    return (-1)**d * coeff * y[i]**d
 
 Ki_fn = rep_by_idx(Ki_on_xvar, Ki_on_yvar)
 
@@ -167,14 +174,14 @@ Ki_fn = rep_by_idx(Ki_on_xvar, Ki_on_yvar)
 def qnum_poly(i,k):
     s = R(0)
     for j in range(k):
-        s += q[i]^j
+        s += q[i]**j
     return s
 
 # t^(1-k) + t^(3-k) + ... + t^(k-3) + t^(k-1)
 def tnum_central(k):
     s = R(0)
     for j in range(k):
-        s += t^(2*j - k + 1)
+        s += t**(2*j - k + 1)
     return s
 
 # E is acting on x by taking the q[i] derivative.
@@ -184,22 +191,26 @@ def tnum_central(k):
 def E_on_xvar(i, d):
     if d == 0:
         return 0
-    num = q[i]^i*t^(1-d) - q[i]^(-i)*t^(d-1)
-    denom = t - t^(-1)
+    num = scalar_action(i)*t**(1-d) - (1/scalar_action(i))*t**(d-1)
+    denom = t - t**(-1)
     coeff = tnum_central(d)*num/denom
-    return coeff * x[i]^(d-1)
+    return coeff * x[i]**(d-1)
 
 def E_on_yvar(i, d):
     if d == 0:
         return 0
-    num = q[i]^i*t^(1-d) - q[i]^(-i)*t^(d-1)
-    denom = t - t^(-1)
+    num = scalar_action(i)*t**(1-d) - (1/scalar_action(i))*t**(d-1)
+    denom = t - t**(-1)
     coeff = tnum_central(d)*num/denom
-    return (-1)^d * coeff * y[i]^(d-1)
+    return (-1)**d * coeff * y[i]**(d-1)
 
 E_fn = rep_by_idx(E_on_xvar, E_on_yvar)
 def midx_flatten(midx):
-    ps = list(midx[0]) + list(midx[1])
+    xdict = midx[0].dict()
+    ydict = midx[1].dict()
+    xexps = [xdict[x[i]] if x[i] in xdict else 0 for i in range(len(x))]
+    yexps = [ydict[y[i]] if y[i] in ydict else 0 for i in range(len(y))]
+    ps = xexps+yexps
     return [(i,ps[i]) for i in range(len(ps))]
 
 # rho_X accepts a list of parts with their indices and returns a monomial in R
@@ -221,41 +232,32 @@ def rep_monomial(i_fn, e_fn, k_fn, ki_fn, f_fn):
         return tot
     def rho_E(parts):
         if len(parts) == 0:
-            return R(1)
+            return R(0)
         e_tensor_i = e_fn(parts[0])*rho_I(parts[1:])
         k_tensor_e = k_fn(parts[0])*rho_E(parts[1:])
         return e_tensor_i + k_tensor_e
     def rho_F(parts):
         if len(parts) == 0:
-            return R(1)
+            return R(0)
         f_tensor_ki = f_fn(parts[0])*rho_Ki(parts[1:])
         i_tensor_f = i_fn(parts[0])*rho_F(parts[1:])
         return f_tensor_ki + i_tensor_f
-    return (rho_I, rho_E, rho_K, rho_Ki, rho_F)
+    return {'i': rho_I,
+            'e': rho_E,
+            'k': rho_K,
+            'ki': rho_Ki,
+            'f': rho_F}
+
+def apply_rho_to_midx(rho, midx):
+    parts = midx_flatten(midx)
+    return C(rho(parts))
 
 def my_rep_on_basis():
+    from functools import partial
     rhos = rep_monomial(I_fn, E_fn, K_fn, Ki_fn, F_fn)
-    actions = []
-    for rho in rhos:
-        def action_on_basis(midx):
-            parts = midx_flatten(midx)
-            return C(rho(parts))
-        actions.append(C.module_morphism(on_basis=action_on_basis, codomain=C))
+    actions = {
+        name:
+        C.module_morphism(on_basis=partial(apply_rho_to_midx, rho), codomain=C)
+        for name, rho in rhos.items()
+        }
     return actions
-
-def etuple_part(i, etup):
-    d = etup[i]
-    return d, etup.esub(ETuple({i: d}, int(len(etup))))
-
-# action of U_q sl_2 can be given on tensor factors
-# Needed api: midx_decompose(i, midx), which returns an basis index for the ith tensor factor
-# together with a midx representing the rest of the monomial
-def midx_decompose(i, midx):
-    xtup = midx[0]
-    ytup = midx[1]
-    if i < len(xtup):
-        d, xrest = etuple_part(i, xtup)
-        return d, (xrest, ytup)
-    else:
-        d, yrest = etuple_part(i-len(xtup), ytup)
-        return d, (xtup, yrest)
