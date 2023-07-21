@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8-unix
 # -*- mode: python-mode; python-indent-offset: 4 -*-
+# Quantum Schubert polynomials for sage
+# Author: Jesse Selover
+# Copyright: 2023 Jesse Selover
 import sage
 from forget_modules import monomial_iso, depolynomialate
 
