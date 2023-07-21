@@ -48,15 +48,21 @@ def staircase(k):
 
 # Billey-Haiman 1995 Proposition 4.15
 def top_C_class():
+    # For large n it's too computationally expensive to add Q polynomials together.
+    # We maintain the coefficients of each Q ourselves
     delta_big = staircase(n)
     delta_small = staircase(n-1)
-    top = Sym(0)
+    top = {}
     for size in range(delta_small.size()+1):
         for lam in Partitions(size, outer=delta_small):
-            f = Q[Partition([delta_big.get_part(i) + lam.get_part(i) for i in range(n)])]
-            s = skew_multi_schur(delta_small, lam.conjugate(), n-1)
-            top += f*s
-    return top
+            qidx = Partition([delta_big.get_part(i) + lam.get_part(i) for i in range(n)])
+            s = R(skew_multi_schur(delta_small, lam.conjugate(), n-1))
+            if qidx in top:
+                top[qidx] += s
+            else:
+                top[qidx] = s
+    # And stitch them together:
+    return Q.sum_of_terms(top.items())
 
 def base_siR(i):
     images = list(zarr).copy()
