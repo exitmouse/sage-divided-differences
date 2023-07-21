@@ -12,8 +12,22 @@ R = PolynomialRing(QQ,'x',n)
 zarr = R.gens()
 Sym = SymmetricFunctions(R['t'])
 P = Sym.hall_littlewood(t=-1).P()
+Q = Sym.hall_littlewood(t=-1).Q()
 p = Sym.power()
+h = Sym.h()
 U = p.base_ring()
+
+# "Skew multi-schur functions" from the formula for the top class
+# in Billey-Haiman 1995
+# Defined via a Jacobi-Trudi identity.
+def skew_multi_schur(mu, lam, k):
+    index = lambda i, j: mu.get_part(i)-lam.get_part(j)+j-i
+    def entry(i,j):
+        if index(i,j) < 0:
+            return R(0)
+        f = R(h[index(i,j)].expand(n))
+        return f(list(zarr[0:i+1])+[0 for r in range(n-i-1)])
+    return matrix(R,k,k,entry).determinant()
 
 def z(i):
     return zarr[i-1]
@@ -26,7 +40,23 @@ def alpha(i):
 
 topB3poly = (P[5,3,1] + P[4,3,1]*z(1) + P[5,2,1]*z(1) + P[4,2,1]*z(1)*z(1) +
              P[4,3,1]*z(2) + P[4,2,1]*z(1)*z(2) + P[3,2,1]*z(1)*z(1)*z(2))
-#TODO: implement top class
+topC3poly = (Q[5,3,1] + Q[4,3,1]*z(1) + Q[5,2,1]*z(1) + Q[4,2,1]*z(1)*z(1) +
+             Q[4,3,1]*z(2) + Q[4,2,1]*z(1)*z(2) + Q[3,2,1]*z(1)*z(1)*z(2))
+
+def staircase(k):
+    return Partition([k-i for i in range(k)])
+
+# Billey-Haiman 1995 Proposition 4.15
+def top_C_class():
+    delta_big = staircase(n)
+    delta_small = staircase(n-1)
+    top = Sym(0)
+    for size in range(delta_small.size()+1):
+        for lam in Partitions(size, outer=delta_small):
+            f = Q[Partition([delta_big.get_part(i) + lam.get_part(i) for i in range(n)])]
+            s = skew_multi_schur(delta_small, lam.conjugate(), n-1)
+            top += f*s
+    return top
 
 def base_siR(i):
     images = list(zarr).copy()
