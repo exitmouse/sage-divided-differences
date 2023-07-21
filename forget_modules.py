@@ -10,7 +10,9 @@ from sage.categories.cartesian_product import cartesian_product
 from sage.categories.modules import Modules
 from sage.categories.modules_with_basis import ModulesWithBasis
 from sage.combinat.free_module import CombinatorialFreeModule
+from sage.combinat.partition import Partition, Partitions
 from sage.modules.module import Module
+from sage.sets.non_negative_integers import NonNegativeIntegers
 from sage.structure.coerce_exceptions import CoercionException
 from sage.structure.element import parent, Element
 from sage.structure.element_wrapper import ElementWrapper
@@ -325,7 +327,7 @@ def midxfactor(midx, amt):
                 return None
             k,v = next(iter(midx.dict().items()))
             return midx.parent()({k: 1}), midx.parent()({r: (s-1 if r == k else s) for r,s in midx.dict().items()})
-    if midx in Integers():
+    if midx in NonNegativeIntegers():
         if amt == 0:
             return 0, midx
         elif midx >= amt:

@@ -5,7 +5,7 @@
 # Author: Jesse Selover
 # Copyright: 2023 Jesse Selover
 
-import forget_modules
+from forget_modules import *
 
 n = 3
 R = PolynomialRing(QQ,'x',n)
@@ -74,7 +74,7 @@ def c_divdiff(i):
     return C.module_morphism(function=lambda f: C(_divdiff(i,f.unbox())), codomain=C)
 
 def divdiff(i):
-    return lambda f: P(c_divdiff(i)(C(f)))
+    return lambda f: (c_divdiff(i)(C(f))).unbox()
 
 # QQ-linear differential operator can be defined on the images of generators
 def extend_leibniz(gen_images):
@@ -160,13 +160,13 @@ def principal_specialize_gen():
             # = 1/(q^d-1) * [prod_{j=1}^{i-1} (q^j + 1)/(q^j - 1)]
 
 # Wrapper function because coercions are finicky
-# Input: f, a type B Schubert polynomial in ring P
-# Output: d/dp_1 f, coerced to the ring P
+# Input: f, a type B Schubert polynomial in ring Sym
+# Output: d/dp_1 f, coerced to the ring Sym
 def divergence(f):
-    return P(c_ddp(1)(C(f)))
+    return (c_ddp(1)(C(f))).unbox()
 
 # Tests:
-codim1 = [divdiff(i)(topB3Poly) for i in range(3)]
+codim1 = [divdiff(i)(topB3poly) for i in range(3)]
 
 f = divergence(topB3poly)
 print(f)
