@@ -23,7 +23,6 @@ def alpha(i):
 topB3poly = (P[5,3,1] + P[4,3,1]*z(1) + P[5,2,1]*z(1) + P[4,2,1]*z(1)*z(1) +
              P[4,3,1]*z(2) + P[4,2,1]*z(1)*z(2) + P[3,2,1]*z(1)*z(1)*z(2))
 
-
 def base_siR(i):
     images = list(zarr).copy()
     if i == 0:
@@ -69,6 +68,8 @@ def _divdiff(i,f):
 def divdiff(i):
     return C.module_morphism(function=lambda f: C(_divdiff(i,f.unbox())), codomain=C)
 
+codim1 = [divdiff(i)(C(topB3Poly)) for i in range(3)]
+
 # QQ-linear differential operator can be defined on the images of generators
 def extend_leibniz(gen_images):
     def extend_leibniz_midx(midx):
@@ -94,6 +95,15 @@ def ddzi_gen(i):
             return -(1/2)*supp[0]*z(i)^(supp[0]-1)
         return 0
     return ddzi_internal
+
+def ddpi_gen(i):
+    def ddpi_internal(generator):
+        supp = p(generator).support()[0]
+        if len(supp) == 1:
+            if supp[0] == i:
+                return 1
+        return 0
+    return ddpi_internal
 
 tgens = FiniteEnumeratedSet(U.gens())
 zgens = FiniteEnumeratedSet(R.gens())
@@ -123,6 +133,10 @@ class SymGens(DisjointUnionEnumeratedSets):
 
 def ddz(i):
     return extend_leibniz(Family(SymGens(), ddzi_gen(i)))
+
+def ddp(i):
+    return extend_leibniz(Family(SymGens(), ddpi_gen(i)))
+
 
 CEnd = C.Hom(C)
 
