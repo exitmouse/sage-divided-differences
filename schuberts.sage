@@ -70,10 +70,11 @@ def _divdiff(i,f):
     g = f - siR(i,f)
     return p(g).map_coefficients(remove_root(i))
 
-def divdiff(i):
+def c_divdiff(i):
     return C.module_morphism(function=lambda f: C(_divdiff(i,f.unbox())), codomain=C)
 
-codim1 = [divdiff(i)(C(topB3Poly)) for i in range(3)]
+def divdiff(i):
+    return lambda f: P(c_divdiff(i)(C(f)))
 
 # QQ-linear differential operator can be defined on the images of generators
 def extend_leibniz(gen_images):
@@ -136,10 +137,10 @@ class SymGens(DisjointUnionEnumeratedSets):
             return True
         return False
 
-def ddz(i):
+def c_ddz(i):
     return extend_leibniz(Family(SymGens(), ddzi_gen(i)))
 
-def ddp(i):
+def c_ddp(i):
     return extend_leibniz(Family(SymGens(), ddpi_gen(i)))
 
 
@@ -157,3 +158,18 @@ def principal_specialize_gen():
             i = supp[0]
             # principal specialization p_i(q^{-1}, q^{-2}, ...)
             # = 1/(q^d-1) * [prod_{j=1}^{i-1} (q^j + 1)/(q^j - 1)]
+
+# Wrapper function because coercions are finicky
+# Input: f, a type B Schubert polynomial in ring P
+# Output: d/dp_1 f, coerced to the ring P
+def divergence(f):
+    return P(c_ddp(1)(C(f)))
+
+# Tests:
+codim1 = [divdiff(i)(topB3Poly) for i in range(3)]
+
+f = divergence(topB3poly)
+print(f)
+for g in codim1:
+    f -= 2*g
+print(f)
