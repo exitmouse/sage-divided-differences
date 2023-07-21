@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8-unix
 # -*- mode: python-mode; python-indent-offset: 4 -*-
+# Schubert polynomials in other Lie types in Sage
+# Author: Jesse Selover
+# Copyright: 2023 Jesse Selover
+
 import forget_modules
 
 n = 3
@@ -22,6 +26,7 @@ def alpha(i):
 
 topB3poly = (P[5,3,1] + P[4,3,1]*z(1) + P[5,2,1]*z(1) + P[4,2,1]*z(1)*z(1) +
              P[4,3,1]*z(2) + P[4,2,1]*z(1)*z(2) + P[3,2,1]*z(1)*z(1)*z(2))
+#TODO: implement top class
 
 def base_siR(i):
     images = list(zarr).copy()

@@ -1,6 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8-unix
 # -*- mode: python-mode; python-indent-offset: 4 -*-
+# Forgetful modules for sage
+# Author: Jesse Selover
+# Copyright: 2023 Jesse Selover
+
 import sage
 from sage.categories.cartesian_product import cartesian_product
 from sage.categories.modules import Modules
